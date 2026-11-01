@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "name": "treesitter",
+  "version": "0.1.0",
+  "description": "Cross-platform tree-sitter parsing, incremental edits, syntax navigation and queries with owned native lifetimes",
+  "libraries": [
+    { "libName": "buoy_treesitter", "system": false, "minVersion": "0.1.0" }
+  ]
+}

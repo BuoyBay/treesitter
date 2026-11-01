@@ -1,0 +1,378 @@
+' Managed tree-sitter bindings. Instances are confined to one thread.
+Private Declare Function N_language_open Lib "buoy_treesitter" Alias "bts_language_open" (libraryPath As String, symbol As String) As Ptr
+Private Declare Sub N_language_close Lib "buoy_treesitter" Alias "bts_language_close" (handle As Ptr)
+Private Declare Function N_parser_new Lib "buoy_treesitter" Alias "bts_parser_new" (language As Ptr) As Ptr
+Private Declare Sub N_parser_delete Lib "buoy_treesitter" Alias "bts_parser_delete" (handle As Ptr)
+Private Declare Function N_parse Lib "buoy_treesitter" Alias "bts_parse" (parser As Ptr, oldTree As Ptr, source As String, length As Integer) As Ptr
+Private Declare Sub N_tree_delete Lib "buoy_treesitter" Alias "bts_tree_delete" (handle As Ptr)
+Private Declare Function N_tree_copy Lib "buoy_treesitter" Alias "bts_tree_copy" (handle As Ptr) As Ptr
+Private Declare Function N_tree_root Lib "buoy_treesitter" Alias "bts_tree_root" (handle As Ptr) As Ptr
+Private Declare Sub N_node_delete Lib "buoy_treesitter" Alias "bts_node_delete" (handle As Ptr)
+Private Declare Function N_node_type Lib "buoy_treesitter" Alias "bts_node_type" (handle As Ptr) As String
+Private Declare Function N_node_string Lib "buoy_treesitter" Alias "bts_node_string" (handle As Ptr) As CString
+Private Declare Sub N_free Lib "buoy_treesitter" Alias "bts_free" (handle As Ptr)
+Private Declare Function N_node_child Lib "buoy_treesitter" Alias "bts_node_child" (handle As Ptr, index As Integer, named As Integer) As Ptr
+Private Declare Function N_node_parent Lib "buoy_treesitter" Alias "bts_node_parent" (handle As Ptr) As Ptr
+Private Declare Function N_node_child_by_field Lib "buoy_treesitter" Alias "bts_node_child_by_field" (handle As Ptr, name As String) As Ptr
+Private Declare Function N_tree_edit Lib "buoy_treesitter" Alias "bts_tree_edit" (handle As Ptr, startByte As Integer, oldEndByte As Integer, newEndByte As Integer, startRow As Integer, startColumn As Integer, oldEndRow As Integer, oldEndColumn As Integer, newEndRow As Integer, newEndColumn As Integer) As Integer
+Private Declare Function N_query_new Lib "buoy_treesitter" Alias "bts_query_new" (language As Ptr, source As String, length As Integer, ByRef offset As Integer, ByRef errorCode As Integer) As Ptr
+Private Declare Sub N_query_delete Lib "buoy_treesitter" Alias "bts_query_delete" (handle As Ptr)
+Private Declare Function N_query_cursor_new Lib "buoy_treesitter" Alias "bts_query_cursor_new" (query As Ptr, node As Ptr) As Ptr
+Private Declare Sub N_query_cursor_delete Lib "buoy_treesitter" Alias "bts_query_cursor_delete" (handle As Ptr)
+Private Declare Function N_query_next Lib "buoy_treesitter" Alias "bts_query_next" (handle As Ptr) As Integer
+Private Declare Function N_query_capture_node Lib "buoy_treesitter" Alias "bts_query_capture_node" (handle As Ptr) As Ptr
+Private Declare Function N_query_capture_name Lib "buoy_treesitter" Alias "bts_query_capture_name" (handle As Ptr) As String
+Private Declare Function N_query_pattern Lib "buoy_treesitter" Alias "bts_query_pattern" (handle As Ptr) As Integer
+Private Declare Function N_node_start_byte Lib "buoy_treesitter" Alias "bts_node_start_byte" (handle As Ptr) As Integer
+Private Declare Function N_node_end_byte Lib "buoy_treesitter" Alias "bts_node_end_byte" (handle As Ptr) As Integer
+Private Declare Function N_node_start_row Lib "buoy_treesitter" Alias "bts_node_start_row" (handle As Ptr) As Integer
+Private Declare Function N_node_start_column Lib "buoy_treesitter" Alias "bts_node_start_column" (handle As Ptr) As Integer
+Private Declare Function N_node_end_row Lib "buoy_treesitter" Alias "bts_node_end_row" (handle As Ptr) As Integer
+Private Declare Function N_node_end_column Lib "buoy_treesitter" Alias "bts_node_end_column" (handle As Ptr) As Integer
+Private Declare Function N_node_child_count Lib "buoy_treesitter" Alias "bts_node_child_count" (handle As Ptr) As Integer
+Private Declare Function N_node_named_child_count Lib "buoy_treesitter" Alias "bts_node_named_child_count" (handle As Ptr) As Integer
+Private Declare Function N_node_is_named Lib "buoy_treesitter" Alias "bts_node_is_named" (handle As Ptr) As Integer
+Private Declare Function N_node_has_error Lib "buoy_treesitter" Alias "bts_node_has_error" (handle As Ptr) As Integer
+Private Declare Function N_node_is_missing Lib "buoy_treesitter" Alias "bts_node_is_missing" (handle As Ptr) As Integer
+
+Private Sub RequireHandle(handle As Ptr)
+    If handle = Nil Then Throw New InvalidArgumentException("Tree-sitter object is closed or allocation failed")
+End Sub
+
+Private Sub RequireCString(value As String)
+    Dim encoded As Bytes = Bytes.FromString(value, Text.Encodings.UTF8)
+    For i As Integer = 0 To encoded.Count - 1
+        If encoded.Item(i) = 0 Then Throw New InvalidArgumentException("Embedded NUL in native name or path")
+    Next
+End Sub
+
+' Keeps a dynamically loaded grammar alive for all dependent objects.
+Public Class TSLanguage
+    Internal Property Handle As Ptr
+
+    Public Sub Constructor(libraryPath As String, symbol As String)
+        RequireCString(libraryPath)
+        RequireCString(symbol)
+        If symbol = "" Then Throw New InvalidArgumentException("Grammar symbol is required")
+        Me.Handle = N_language_open(libraryPath, symbol)
+        If Me.Handle = Nil Then Throw New InvalidArgumentException("Cannot load grammar library or symbol: " + symbol)
+    End Sub
+
+    Public Sub Destructor()
+        If Me.Handle <> Nil Then N_language_close(Me.Handle)
+    End Sub
+End Class
+
+Public Class TSParser
+    Private Property Handle As Ptr
+    Private Property Language As TSLanguage
+
+    Public Sub Constructor(language As TSLanguage)
+        If language = Nil Then Throw New InvalidArgumentException("Language is required")
+        Me.Language = language
+        Me.Handle = N_parser_new(language.Handle)
+        If Me.Handle = Nil Then Throw New InvalidArgumentException("Unsupported grammar ABI or parser allocation failed")
+    End Sub
+
+    Public Sub Close()
+        If Me.Handle <> Nil Then N_parser_delete(Me.Handle)
+        Me.Handle = Nil
+    End Sub
+
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+
+    ' oldTree must have been edited to match source before incremental parsing.
+    Public Function Parse(source As String) As TSTree
+        Return Me.ParseIncremental(source, Nil)
+    End Function
+
+    Public Function ParseIncremental(source As String, oldTree As TSTree) As TSTree
+        RequireHandle(Me.Handle)
+        Dim previous As Ptr = Nil
+        If oldTree <> Nil Then
+            oldTree.RequireOpen()
+            If oldTree.Language <> Me.Language Then Throw New InvalidArgumentException("Tree belongs to another language instance")
+            previous = oldTree.Handle
+        End If
+        Dim size As Integer = Bytes.FromString(source, Text.Encodings.UTF8).Count
+        If size > 4294967295 Then Throw New InvalidArgumentException("Source exceeds tree-sitter's byte limit")
+        Dim nativeResult As Ptr = N_parse(Me.Handle, previous, source, size)
+        RequireHandle(nativeResult)
+        Return New TSTree(nativeResult, Me.Language)
+    End Function
+End Class
+
+Public Class TSTree
+    Internal Property Handle As Ptr
+    Internal Property Language As TSLanguage
+    Internal Property Generation As Integer = 0
+
+    Internal Sub Constructor(handle As Ptr, language As TSLanguage)
+        RequireHandle(handle)
+        Me.Handle = handle
+        Me.Language = language
+    End Sub
+
+    Internal Sub RequireOpen()
+        RequireHandle(Me.Handle)
+    End Sub
+
+    Public Sub Close()
+        If Me.Handle <> Nil Then N_tree_delete(Me.Handle)
+        Me.Handle = Nil
+    End Sub
+
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+
+    Public Function Copy() As TSTree
+        Me.RequireOpen()
+        Return New TSTree(N_tree_copy(Me.Handle), Me.Language)
+    End Function
+
+    Public Function RootNode() As TSNode
+        Me.RequireOpen()
+        Return New TSNode(N_tree_root(Me.Handle), Me)
+    End Function
+
+    ' All coordinates are zero-based UTF-8 bytes; editing invalidates existing nodes/cursors.
+    Public Sub Edit(startByte As Integer, oldEndByte As Integer, newEndByte As Integer, startRow As Integer, startColumn As Integer, oldEndRow As Integer, oldEndColumn As Integer, newEndRow As Integer, newEndColumn As Integer)
+        Me.RequireOpen()
+        If N_tree_edit(Me.Handle, startByte, oldEndByte, newEndByte, startRow, startColumn, oldEndRow, oldEndColumn, newEndRow, newEndColumn) = 0 Then Throw New InvalidArgumentException("Invalid edit coordinates")
+        Me.Generation += 1
+    End Sub
+End Class
+
+Public Class TSNode
+    Internal Property Handle As Ptr
+    Internal Property Owner As TSTree
+    Private Property Generation As Integer
+
+    Internal Sub Constructor(handle As Ptr, owner As TSTree)
+        RequireHandle(handle)
+        Me.Handle = handle
+        Me.Owner = owner
+        Me.Generation = owner.Generation
+    End Sub
+
+    Internal Sub RequireOpen()
+        RequireHandle(Me.Handle)
+        Me.Owner.RequireOpen()
+        If Me.Generation <> Me.Owner.Generation Then Throw New InvalidArgumentException("Node was invalidated by a tree edit")
+    End Sub
+
+    Public Sub Close()
+        If Me.Handle <> Nil Then N_node_delete(Me.Handle)
+        Me.Handle = Nil
+    End Sub
+
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+
+    Public Function Child(index As Integer, named As Boolean = False) As TSNode
+        Me.RequireOpen()
+        If index < 0 Then Throw New InvalidArgumentException("Negative child index")
+        Dim onlyNamed As Integer = 0
+        If named Then onlyNamed = 1
+        Dim childHandle As Ptr = N_node_child(Me.Handle, index, onlyNamed)
+        If childHandle = Nil Then Return Nil
+        Return New TSNode(childHandle, Me.Owner)
+    End Function
+
+    Public Function Parent() As TSNode
+        Me.RequireOpen()
+        Dim nativeResult As Ptr = N_node_parent(Me.Handle)
+        If nativeResult = Nil Then Return Nil
+        Return New TSNode(nativeResult, Me.Owner)
+    End Function
+
+    Public Function ChildByField(name As String) As TSNode
+        Me.RequireOpen()
+        RequireCString(name)
+        Dim nativeResult As Ptr = N_node_child_by_field(Me.Handle, name)
+        If nativeResult = Nil Then Return Nil
+        Return New TSNode(nativeResult, Me.Owner)
+    End Function
+
+    Public Function SExpression() As String
+        Me.RequireOpen()
+        Dim nativeText As CString = N_node_string(Me.Handle)
+        RequireHandle(nativeText)
+        Try
+            Return CType(nativeText, String)
+        Finally
+            N_free(nativeText)
+        End Try
+    End Function
+
+    Public Property TypeName As String
+        Get
+            Me.RequireOpen()
+            Return N_node_type(Me.Handle)
+        End Get
+    End Property
+
+    Public Property StartByte As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_start_byte(Me.Handle)
+        End Get
+    End Property
+
+    Public Property EndByte As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_end_byte(Me.Handle)
+        End Get
+    End Property
+
+    Public Property StartRow As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_start_row(Me.Handle)
+        End Get
+    End Property
+
+    Public Property StartColumn As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_start_column(Me.Handle)
+        End Get
+    End Property
+
+    Public Property EndRow As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_end_row(Me.Handle)
+        End Get
+    End Property
+
+    Public Property EndColumn As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_end_column(Me.Handle)
+        End Get
+    End Property
+
+    Public Property ChildCount As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_child_count(Me.Handle)
+        End Get
+    End Property
+
+    Public Property NamedChildCount As Integer
+        Get
+            Me.RequireOpen()
+            Return N_node_named_child_count(Me.Handle)
+        End Get
+    End Property
+
+    Public Property IsNamed As Boolean
+        Get
+            Me.RequireOpen()
+            Return N_node_is_named(Me.Handle) <> 0
+        End Get
+    End Property
+
+    Public Property HasError As Boolean
+        Get
+            Me.RequireOpen()
+            Return N_node_has_error(Me.Handle) <> 0
+        End Get
+    End Property
+
+    Public Property IsMissing As Boolean
+        Get
+            Me.RequireOpen()
+            Return N_node_is_missing(Me.Handle) <> 0
+        End Get
+    End Property
+End Class
+
+' Structural queries only: predicates/directives are rejected rather than silently ignored.
+Public Class TSQuery
+    Internal Property Handle As Ptr
+    Internal Property Language As TSLanguage
+
+    Public Sub Constructor(language As TSLanguage, source As String)
+        If language = Nil Then Throw New InvalidArgumentException("Language is required")
+        Me.Language = language
+        Dim offset As Integer = 0
+        Dim errorCode As Integer = 0
+        Dim size As Integer = Bytes.FromString(source, Text.Encodings.UTF8).Count
+        Me.Handle = N_query_new(language.Handle, source, size, offset, errorCode)
+        If Me.Handle = Nil Then Throw New InvalidArgumentException("Query error " + String.From(errorCode) + " at UTF-8 byte " + String.From(offset))
+    End Sub
+
+    Public Sub Destructor()
+        If Me.Handle <> Nil Then N_query_delete(Me.Handle)
+    End Sub
+
+    Public Function Captures(node As TSNode) As TSCaptureCursor
+        If node = Nil Then Throw New InvalidArgumentException("Node is required")
+        node.RequireOpen()
+        If node.Owner.Language <> Me.Language Then Throw New InvalidArgumentException("Query and tree languages differ")
+        Return New TSCaptureCursor(Me, node)
+    End Function
+End Class
+
+Public Class TSCaptureCursor
+    Private Property Handle As Ptr
+    Private Property Query As TSQuery
+    Private Property Root As TSNode
+    Private Property Ready As Boolean = False
+
+    Internal Sub Constructor(query As TSQuery, node As TSNode)
+        Me.Query = query
+        Me.Root = node
+        Me.Handle = N_query_cursor_new(query.Handle, node.Handle)
+        RequireHandle(Me.Handle)
+    End Sub
+
+    Public Sub Close()
+        If Me.Handle <> Nil Then N_query_cursor_delete(Me.Handle)
+        Me.Handle = Nil
+        Me.Ready = False
+    End Sub
+
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+
+    Public Function MoveNext() As Boolean
+        RequireHandle(Me.Handle)
+        Me.Root.RequireOpen()
+        Me.Ready = N_query_next(Me.Handle) <> 0
+        Return Me.Ready
+    End Function
+
+    Private Sub RequireCapture()
+        RequireHandle(Me.Handle)
+        Me.Root.RequireOpen()
+        If Not Me.Ready Then Throw New InvalidArgumentException("Cursor has no current capture")
+    End Sub
+
+    Public Property Name As String
+        Get
+            Me.RequireCapture()
+            Return N_query_capture_name(Me.Handle)
+        End Get
+    End Property
+
+    Public Property PatternIndex As Integer
+        Get
+            Me.RequireCapture()
+            Return N_query_pattern(Me.Handle)
+        End Get
+    End Property
+
+    Public Function Node() As TSNode
+        Me.RequireCapture()
+        Return New TSNode(N_query_capture_node(Me.Handle), Me.Root.Owner)
+    End Function
+End Class

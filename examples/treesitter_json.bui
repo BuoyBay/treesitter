@@ -1,0 +1,16 @@
+Import treesitter
+
+' Pass the absolute path to a compiled tree-sitter-json grammar library.
+Sub Main(args As Array Of String)
+    If Array.Count(args) < 2 Then Throw New InvalidArgumentException("Pass a JSON grammar library path")
+    Dim language As New TSLanguage(args(1), "tree_sitter_json")
+    Dim parser As New TSParser(language)
+    Dim tree As TSTree = parser.Parse("{\"message\": \"Hello, Buoy\", \"count\": 3}")
+    Print tree.RootNode().SExpression()
+    Dim query As New TSQuery(language, "(string) @text (number) @number")
+    Dim captures As TSCaptureCursor = query.Captures(tree.RootNode())
+    While captures.MoveNext()
+        Dim node As TSNode = captures.Node()
+        Print captures.Name + ": " + String.From(node.StartByte) + ".." + String.From(node.EndByte)
+    End While
+End Sub
