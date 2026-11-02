@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "treesitter",
   "version": "0.1.0",
-  "description": "Incremental tree-sitter parse and query",
+  "description": "Incremental tree-sitter",
   "libraries": [
     {
       "libName": "buoy_treesitter",
