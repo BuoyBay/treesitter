@@ -90,8 +90,6 @@ The upstream runtime and JSON fixture are MIT-licensed. Their license texts
 are copied from the verified source archives when building; the runtime license
 is delivered with the package under `resources/treesitter-licenses/`.
 
-## Verification
-
-
-Maintainers run the private validation suite before release. See the repository README for public build instructions.
-
+Builder context: run shared `tools/` commands from the assembled
+[BuoyBay workspace](https://github.com/BuoyBay/workspace-tools). The scripts live
+in [devtools](https://github.com/BuoyBay/devtools), alongside the shared build inputs.

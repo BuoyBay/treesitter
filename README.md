@@ -11,14 +11,14 @@ From a Buoy consumer project with BPM installed:
 
 ```sh
 bpm add treesitter --git https://github.com/BuoyBay/treesitter.git --rev refs/heads/main
-```
+```basic
 
 BPM records the resolved commit in its lockfile. Keep that lockfile with the
 consumer project for reproducible installs.
 
 ## Example
 
-```buoy
+```basic
 Import treesitter
 
 Sub Main(args As Array Of String)
@@ -48,8 +48,6 @@ On your own machine, install Buoy and run:
 ```sh
 buoy ai init --both
 ```
-
-The generated agent files and editor settings stay local and are ignored by Git.
 
 ## Contributing
 
