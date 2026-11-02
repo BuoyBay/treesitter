@@ -1,4 +1,4 @@
-# Parse and query syntax with incremental tree-sitter trees
+# Incremental tree-sitter parse and query
 
 A cross-platform `treesitter` package wrapping the native tree-sitter runtime.
 It loads compiled grammars and exposes managed parsers, trees, nodes and structural

@@ -2,8 +2,12 @@
   "schema": 1,
   "name": "treesitter",
   "version": "0.1.0",
-  "description": "Cross-platform tree-sitter parsing, incremental edits, syntax navigation and queries with owned native lifetimes",
+  "description": "Incremental tree-sitter parse and query",
   "libraries": [
-    { "libName": "buoy_treesitter", "system": false, "minVersion": "0.1.0" }
+    {
+      "libName": "buoy_treesitter",
+      "system": false,
+      "minVersion": "0.1.0"
+    }
   ]
 }
